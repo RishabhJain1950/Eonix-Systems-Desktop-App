@@ -48,5 +48,6 @@ npm run lint
 
 ## Notes
 
-- Hardware auto-discovery currently targets STM32 CDC VCP `VID:PID 0483:5740` (see `device/serial-handler.js`).
+- Hardware auto-discovery targets STM32 native CDC and common ST-LINK VCP
+  ports under VID `0483` (see `device/serial-handler.js`).
 - Flashing expects `STM32_Programmer_CLI` available on PATH (from STM32CubeProgrammer).

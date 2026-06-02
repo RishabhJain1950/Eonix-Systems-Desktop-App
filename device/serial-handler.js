@@ -6,8 +6,12 @@ const { EventEmitter } = require('events')
 // During bring-up we accept common STLink/VCP PIDs so Nucleo boards auto-detect.
 const EONIX_VID = '0483' // STMicroelectronics
 const EONIX_PIDS = new Set([
-  '5740', // STM32 CDC VCP (typical)
-  '374b', // STLink Virtual COM Port (NUCLEO-F446RE commonly)
+  '5740', // STM32 native USB CDC VCP (not used by current G491 firmware)
+  '374b', // ST-LINK/V2-1 Virtual COM Port
+  '374e', // ST-LINK-V3E VCP (NUCLEO-G491RE on-board programmer)
+  '374f', // ST-LINK-V3 VCP (variant)
+  '3753', // ST-LINK-V3 VCP (variant)
+  '3754', // ST-LINK-V3 VCP (variant)
 ])
 
 function isEonixPort(p) {
@@ -170,7 +174,7 @@ class SerialHandler {
           // module_list is pushed by enableMock(); keep as no-op.
           return true
         }
-      } catch (e) {
+      } catch {
         return false
       }
       return true
