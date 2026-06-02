@@ -16,14 +16,13 @@ export default function Telemetry() {
     return () => stopTelemetry()
   }, [connected, startTelemetry, stopTelemetry])
 
-  const modulesById = telemetry?.modulesById || {}
-
   const rows = useMemo(() => {
+    const modulesById = telemetry?.modulesById || {}
     return modules.map((m) => {
       const entry = modulesById[String(m.id)] || modulesById[m.id] || {}
       return { module: m, entry }
     })
-  }, [modules, modulesById])
+  }, [modules, telemetry])
 
   return (
     <div className="fade-in">
@@ -104,4 +103,3 @@ export default function Telemetry() {
     </div>
   )
 }
-

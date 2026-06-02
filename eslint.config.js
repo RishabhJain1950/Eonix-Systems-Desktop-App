@@ -36,6 +36,7 @@ export default defineConfig([
       'device/**/*.js',
       'shared/**/*.js',
       'codegen/**/*.js',
+      'tools/**/*.js',
       'vite.config.js',
     ],
     languageOptions: {

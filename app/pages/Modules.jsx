@@ -13,7 +13,6 @@ export default function Modules() {
       let applied = 0
       for (const m of modules) {
         // applyModuleConfig returns boolean success in all cases
-        // eslint-disable-next-line no-await-in-loop
         const ok = await applyModuleConfig(m)
         if (ok) applied++
       }

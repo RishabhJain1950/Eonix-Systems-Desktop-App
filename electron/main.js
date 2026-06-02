@@ -6,6 +6,18 @@ const { SerialHandler } = require('../device/serial-handler')
 let mainWindow = null
 let serialHandler = null
 
+app.setName('Eonix')
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.eonix.desktop')
+}
+
+function getIconPath() {
+  if (process.env.VITE_DEV_SERVER_URL) {
+    return path.join(__dirname, '../public/icon.ico')
+  }
+  return path.join(__dirname, '../dist/icon.ico')
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -19,7 +31,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
-    icon: path.join(__dirname, '../public/icon.ico'),
+    icon: getIconPath(),
     show: false,
   })
 

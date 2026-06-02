@@ -10,6 +10,7 @@ This is a **Vite + React** renderer with an **Electron** main process that talks
 - `electron/`: Electron main + preload (IPC bridge exposed as `window.eonix`)
 - `device/`: serial + device discovery/telemetry plumbing (`SerialHandler`)
 - `codegen/`: STM32 code generation utilities + templates
+- `Images/`: source brand/logo images used to refresh runtime app assets
 - `shared/`: shared utilities/types (as the project grows)
 
 Build outputs:
@@ -51,3 +52,9 @@ npm run lint
 - Hardware auto-discovery targets STM32 native CDC and common ST-LINK VCP
   ports under VID `0483` (see `device/serial-handler.js`).
 - Flashing expects `STM32_Programmer_CLI` available on PATH (from STM32CubeProgrammer).
+- App logo source: `Images/Logo Only White.png`.
+- Runtime logo/icon outputs: `public/assets/eonix-app-logo.png`,
+  `public/eonix-app-logo.png`, and `public/icon.ico`.
+- Code generation is self-contained; `codegen/templates/common/eonix_can_protocol.h`
+  is bundled inside this repo so the app does not depend on a sibling firmware
+  checkout.

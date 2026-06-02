@@ -12,7 +12,7 @@ function Titlebar() {
   return (
     <div className="titlebar">
       <div className="titlebar-logo">
-        <img src="/assets/Logo Only White Transparent.png" alt="Eonix Logo" style={{ width: '22px', height: '22px', objectFit: 'contain' }} />
+        <img className="titlebar-logo-img" src="/assets/eonix-app-logo.png" alt="Eonix Logo" />
         <span>Eonix</span>
       </div>
       <div className="titlebar-center">

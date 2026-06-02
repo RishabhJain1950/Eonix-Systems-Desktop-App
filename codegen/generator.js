@@ -1,7 +1,6 @@
 import tplMainboardC from './templates/mainboard/main.c?raw'
 import tplModuleC from './templates/module/main.c?raw'
-// Relative path to get into stm32/common from codegen/
-import tplCanH from '../../stm32/common/eonix_can_protocol.h?raw'
+import tplCanH from './templates/common/eonix_can_protocol.h?raw'
 
 export function generateProject(modules, configs, platform = 'Mega') {
   const files = {}
