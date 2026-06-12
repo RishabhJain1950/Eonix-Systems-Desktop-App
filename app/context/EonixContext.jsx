@@ -1,141 +1,176 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { getModuleKey, isRoleCompatible, normalizeModule } from '../domain/moduleModel'
+import {
+  SAM_COMMANDS,
+  createIdentifyCommand,
+  createReplacementCommand,
+  createRoleConfigCommand,
+} from '../domain/samCommands'
 
 const EonixContext = createContext(null)
+
+export { getModuleKey, isRoleCompatible, normalizeModule }
 
 export function EonixProvider({ children }) {
   const [connected, setConnected] = useState(false)
   const [deviceInfo, setDeviceInfo] = useState(null)
   const [modules, setModules] = useState([])
-  const [moduleConfigs, setModuleConfigs] = useState({}) // { [moduleId]: { function, params } }
+  const [moduleConfigs, setModuleConfigs] = useState({})
   const [telemetry, setTelemetry] = useState(null)
-  const [mockMode, setMockMode] = useState(false)
   const [generatedFiles, setGeneratedFiles] = useState(null)
   const [logs, setLogs] = useState([])
   const listenersRegistered = useRef(false)
+  const telemetryPollInterval = useRef(null)
 
-  const addLog = useCallback((msg, type = 'info') => {
-    setLogs(prev => [...prev.slice(-200), { text: msg, type, time: Date.now() }])
+  const addLog = useCallback((message, type = 'info') => {
+    setLogs((previousLogs) => [
+      ...previousLogs.slice(-200),
+      { text: message, type, time: Date.now() },
+    ])
   }, [])
 
   useEffect(() => {
-    if (!window.eonix || listenersRegistered.current) return
+    if (!window.eonix?.serial || listenersRegistered.current) return
     listenersRegistered.current = true
 
-    const api = window.eonix.serial
+    const serialApi = window.eonix.serial
 
-    const onConnected = (data) => {
+    function onConnected(data) {
       setConnected(true)
       setDeviceInfo(data)
-      addLog(`Eonix Motherboard connected on ${data.port}${data.mock ? ' (MOCK)' : ''}`, 'success')
+      addLog(`SAM connected on ${data.port}`, 'success')
     }
 
-    const onDisconnected = () => {
+    function onDisconnected() {
       setConnected(false)
       setDeviceInfo(null)
       setModules([])
       setTelemetry(null)
-      addLog('Device disconnected', 'info')
+      addLog('SAM disconnected', 'info')
     }
 
-    const onModuleList = (mods) => {
-      setModules(mods)
-      addLog(`Discovered ${mods.length} module(s)`, 'success')
+    function onModuleList(rawModules = []) {
+      const normalizedModules = rawModules.map(normalizeModule)
+      setModules(normalizedModules)
+      addLog(`Discovered ${normalizedModules.length} module(s)`, 'success')
     }
 
-    const onLog = (msg) => addLog(msg, 'info')
-
-    const onTelemetry = (data) => {
-      setTelemetry(data)
-    }
-
-    api.onDeviceConnected(onConnected)
-    api.onDeviceDisconnected(onDisconnected)
-    api.onModuleList(onModuleList)
-    api.onTelemetry(onTelemetry)
-    api.onLog(onLog)
+    serialApi.onDeviceConnected(onConnected)
+    serialApi.onDeviceDisconnected(onDisconnected)
+    serialApi.onModuleList(onModuleList)
+    serialApi.onTelemetry(setTelemetry)
+    serialApi.onLog((message) => addLog(message, 'info'))
 
     return () => {
-      // Clean up all IPC listeners on unmount
-      api.removeAllListeners('device:connected')
-      api.removeAllListeners('device:disconnected')
-      api.removeAllListeners('modules:list')
-      api.removeAllListeners('device:log')
-      api.removeAllListeners('telemetry:update')
+      serialApi.removeAllListeners('device:connected')
+      serialApi.removeAllListeners('device:disconnected')
+      serialApi.removeAllListeners('modules:list')
+      serialApi.removeAllListeners('device:log')
+      serialApi.removeAllListeners('telemetry:update')
       listenersRegistered.current = false
     }
   }, [addLog])
 
   const setModuleConfig = useCallback((moduleId, config) => {
-    setModuleConfigs(prev => ({ ...prev, [moduleId]: config }))
+    setModuleConfigs((previousConfigs) => ({
+      ...previousConfigs,
+      [moduleId]: config,
+    }))
   }, [])
 
   const applyModuleConfig = useCallback(async (module) => {
     try {
-      if (!window.eonix?.serial) return false
-      if (!connected) return false
-      if (!module) return false
+      if (!connected || !module || !window.eonix?.serial) return false
 
-      const config = moduleConfigs[module.id] || { function: '', params: {} }
-      if (!config.function) return false
+      const moduleKey = getModuleKey(module)
+      const roleConfig = moduleConfigs[moduleKey] || {
+        role: module.role || '',
+        config: module.config || {},
+      }
 
-      const def = module.functions.find(f => f.name === config.function)
-      if (!def) return false
+      if (!roleConfig.role) return false
+      if (!isRoleCompatible(roleConfig.role, module)) {
+        addLog(`Role ${roleConfig.role} is not compatible with ${module.descriptor}`, 'error')
+        return false
+      }
 
-      // Validate required parameters exist
-      const canApply = def.parameters.every(p => config.params[p.name] !== undefined && config.params[p.name] !== '')
-      if (!canApply) return false
-
-      const ok = await window.eonix.serial.send({
-        cmd: 'set_module_config',
-        moduleId: module.id,
-        function: config.function,
-        params: config.params,
-      })
-
-      if (ok) addLog(`Applied config to ${module.name}`, 'success')
-      else addLog(`Failed to apply config to ${module.name}`, 'error')
+      const ok = await window.eonix.serial.send(createRoleConfigCommand(module, roleConfig))
+      if (ok) {
+        setModules((previousModules) => previousModules.map((currentModule) => (
+          getModuleKey(currentModule) === moduleKey
+            ? {
+                ...currentModule,
+                role: roleConfig.role,
+                letter: roleConfig.config?.letter ?? currentModule.letter,
+                number: Number(roleConfig.config?.number ?? currentModule.number),
+                led: Boolean(roleConfig.config?.led ?? currentModule.led),
+                ledState: Boolean(roleConfig.config?.led ?? currentModule.ledState),
+                config: roleConfig.config || currentModule.config,
+              }
+            : currentModule
+        )))
+        addLog(`Sent config for ${roleConfig.role}`, 'success')
+      } else {
+        addLog(`Failed to send config for ${module.uid}`, 'error')
+      }
 
       return !!ok
-    } catch (e) {
-      addLog(`Failed to apply config: ${e.message}`, 'error')
+    } catch (error) {
+      addLog(`Failed to send module config: ${error.message}`, 'error')
       return false
     }
-  }, [connected, moduleConfigs, addLog])
+  }, [addLog, connected, moduleConfigs])
 
-  const toggleMock = useCallback(async () => {
-    if (!window.eonix) return
-    if (!mockMode) {
-      await window.eonix.mock.enable()
-      setMockMode(true)
-    } else {
-      await window.eonix.mock.disable()
-      setMockMode(false)
-      setConnected(false)
-      setDeviceInfo(null)
-      setModules([])
+  const identifyModule = useCallback(async (module) => {
+    if (!window.eonix?.serial || !connected || !module) return false
+    return await window.eonix.serial.send(createIdentifyCommand(module))
+  }, [connected])
+
+  const confirmReplacement = useCallback(async (missingModule, candidateModule) => {
+    if (!window.eonix?.serial || !connected || !missingModule || !candidateModule) return false
+
+    const ok = await window.eonix.serial.send(createReplacementCommand(missingModule, candidateModule))
+    if (ok) {
+      addLog(`Replacement confirmed: ${missingModule.role} moved to ${candidateModule.uid}`, 'success')
     }
-  }, [mockMode])
+    return !!ok
+  }, [addLog, connected])
 
-  const startTelemetry = useCallback(async (opts = {}) => {
-    if (!window.eonix?.serial) return
-    const interval_ms = Number(opts.interval_ms ?? 100)
-    await window.eonix.serial.send({
-      cmd: 'telemetry_start',
-      interval_ms,
-    })
-  }, [])
+  const startTelemetry = useCallback(async (options = {}) => {
+    if (telemetryPollInterval.current) clearInterval(telemetryPollInterval.current)
+    telemetryPollInterval.current = null
+
+    if (!connected || !window.eonix?.serial) return
+
+    const intervalMs = Number(options.interval_ms ?? 500)
+    await window.eonix.serial.send({ cmd: SAM_COMMANDS.GET_TELEMETRY })
+    telemetryPollInterval.current = setInterval(() => {
+      window.eonix?.serial?.send({ cmd: SAM_COMMANDS.GET_TELEMETRY })
+    }, intervalMs)
+  }, [connected])
 
   const stopTelemetry = useCallback(async () => {
-    if (!window.eonix?.serial) return
-    await window.eonix.serial.send({ cmd: 'telemetry_stop' })
+    if (telemetryPollInterval.current) clearInterval(telemetryPollInterval.current)
+    telemetryPollInterval.current = null
   }, [])
 
   return (
     <EonixContext.Provider value={{
-      connected, deviceInfo, modules, moduleConfigs, setModuleConfig,
-      telemetry, startTelemetry, stopTelemetry,
+      addLog,
       applyModuleConfig,
-      mockMode, toggleMock, generatedFiles, setGeneratedFiles, logs, addLog
+      confirmReplacement,
+      connected,
+      deviceInfo,
+      generatedFiles,
+      identifyModule,
+      logs,
+      moduleConfigs,
+      modules,
+      setGeneratedFiles,
+      setModuleConfig,
+      startTelemetry,
+      stopTelemetry,
+      telemetry,
     }}>
       {children}
     </EonixContext.Provider>
@@ -143,7 +178,7 @@ export function EonixProvider({ children }) {
 }
 
 export function useEonix() {
-  const ctx = useContext(EonixContext)
-  if (!ctx) throw new Error('useEonix must be inside EonixProvider')
-  return ctx
+  const context = useContext(EonixContext)
+  if (!context) throw new Error('useEonix must be inside EonixProvider')
+  return context
 }

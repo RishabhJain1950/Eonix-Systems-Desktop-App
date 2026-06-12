@@ -5,7 +5,7 @@
  * 
  * Usage:
  * 1. Initialize USB CDC (VCP) and I2C1 in Master Mode.
- * 2. Transmits the `module_list` JSON array over USB continuously/when requested so the desktop app finds 3 mock modules.
+ * 2. Transmits the `module_list` JSON array over USB continuously/when requested so the desktop app finds real modules.
  * 3. Parses incoming JSON commands from the Desktop App and forwards them as I2C writes to the modules.
  */
 

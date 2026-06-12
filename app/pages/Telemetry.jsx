@@ -1,10 +1,11 @@
 import { useEffect, useMemo } from 'react'
 import { useEonix } from '../context/EonixContext'
+import { getModuleKey, getTelemetryValues } from '../domain/moduleModel'
 
-function formatMaybeNumber(v) {
-  if (v === null || v === undefined) return '—'
-  if (typeof v === 'number' && Number.isNaN(v)) return '—'
-  return v
+function formatValue(value) {
+  if (value === null || value === undefined) return '-'
+  if (typeof value === 'number' && Number.isNaN(value)) return '-'
+  return value
 }
 
 export default function Telemetry() {
@@ -12,85 +13,113 @@ export default function Telemetry() {
 
   useEffect(() => {
     if (!connected) return
-    startTelemetry({ interval_ms: 100 })
+    startTelemetry({ interval_ms: 500 })
     return () => stopTelemetry()
   }, [connected, startTelemetry, stopTelemetry])
 
   const rows = useMemo(() => {
     const modulesById = telemetry?.modulesById || {}
-    return modules.map((m) => {
-      const entry = modulesById[String(m.id)] || modulesById[m.id] || {}
-      return { module: m, entry }
+    return modules.map((module) => {
+      const moduleKey = getModuleKey(module)
+      const entry = modulesById[module.role] || modulesById[moduleKey] || modulesById[String(module.id)] || {}
+      return {
+        module,
+        entry,
+        values: getTelemetryValues(entry),
+      }
     })
   }, [modules, telemetry])
+  const testRows = rows.filter(({ module }) => module.descriptor === 'TEST_LETTER_NUMBER')
 
   return (
     <div className="fade-in">
       <header className="page-header">
         <h1 className="page-title">Telemetry</h1>
-        <p className="page-subtitle">Live readings from modules (updates only while this tab is active)</p>
+        <p className="page-subtitle">Live readings from SAM while this tab is active</p>
       </header>
 
       {!connected ? (
         <div className="empty-state">
-          <span className="empty-state-icon">📡</span>
+          <span className="empty-state-icon">TEL</span>
           <div className="empty-state-title">No Connection</div>
-          <div className="empty-state-desc">Connect your motherboard over USB-CDC first.</div>
+          <div className="empty-state-desc">Connect SAM over USB-CDC first.</div>
         </div>
       ) : modules.length === 0 ? (
         <div className="empty-state">
-          <span className="empty-state-icon">🔍</span>
+          <span className="empty-state-icon">CAN</span>
           <div className="empty-state-title">No Modules</div>
           <div className="empty-state-desc">Discover modules in the Modules tab first.</div>
         </div>
+      ) : testRows.length > 0 ? (
+        <div className="page-pad telemetry-card-grid">
+          {testRows.map(({ module, entry }) => (
+            <div className="card telemetry-live-card" key={getModuleKey(module)}>
+              <div className="telemetry-live-header">
+                <div>
+                  <div className="table-primary">{module.role || 'test_module_1'}</div>
+                  <div className="table-secondary">TEST_LETTER_NUMBER</div>
+                </div>
+                <span className={`badge ${module.online ? 'badge-green' : 'badge-red'}`}>
+                  {module.online ? 'ONLINE' : 'OFFLINE'}
+                </span>
+              </div>
+              <div className="telemetry-live-values">
+                <div>
+                  <span>Letter</span>
+                  <strong>{formatValue(entry.letter ?? module.letter)}</strong>
+                </div>
+                <div>
+                  <span>Number</span>
+                  <strong>{formatValue(entry.number ?? module.number)}</strong>
+                </div>
+                <div>
+                  <span>LED</span>
+                  <strong>{(entry.led ?? entry.ledState ?? module.led) ? 'ON' : 'OFF'}</strong>
+                </div>
+                <div>
+                  <span>Online</span>
+                  <strong>{(entry.online ?? module.online) ? 'YES' : 'NO'}</strong>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
-        <div style={{ padding: '0 28px' }}>
-          <div className="card" style={{ padding: 16 }}>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className="page-pad">
+          <div className="card telemetry-card">
+            <div className="table-wrap">
+              <table className="data-table">
                 <thead>
                   <tr>
-                    <th style={{ textAlign: 'left', padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>Module</th>
-                    <th style={{ textAlign: 'left', padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>Values</th>
-                    <th style={{ textAlign: 'left', padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>Last Update</th>
+                    <th>Module</th>
+                    <th>Values</th>
+                    <th>Last Update</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(({ module, entry }) => (
-                    <tr key={module.id}>
-                      <td style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>
-                        <div style={{ fontWeight: 600 }}>{module.name}</div>
-                        <div style={{ fontSize: 12, opacity: 0.7 }}>{module.type} • CAN {module.canId || `ID:${module.id}`}</div>
+                  {rows.map(({ module, entry, values }) => (
+                    <tr key={getModuleKey(module)}>
+                      <td>
+                        <div className="table-primary">{module.role || module.name || module.descriptor}</div>
+                        <div className="table-secondary">
+                          {module.descriptor} - CAN {module.canId || `ID:${module.id}`}
+                        </div>
                       </td>
-                      <td style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>
-                        {module.type === 'lidar' && (
-                          <div style={{ lineHeight: 1.6 }}>
-                            Distance: {formatMaybeNumber(entry.distance_mm)} mm
+                      <td>
+                        {values.length > 0 ? (
+                          <div className="telemetry-values">
+                            {values.map((item) => (
+                              <div key={item.key}>
+                                {item.label}: {formatValue(item.value)}
+                              </div>
+                            ))}
                           </div>
-                        )}
-                        {module.type === 'imu' && (
-                          <div style={{ lineHeight: 1.6 }}>
-                            Gyro X: {formatMaybeNumber(entry.gyro_x_centi_dps)} cdeg/s<br />
-                            Gyro Y: {formatMaybeNumber(entry.gyro_y_centi_dps)} cdeg/s
-                          </div>
-                        )}
-                        {module.type === 'temperature' && (
-                          <div style={{ lineHeight: 1.6 }}>
-                            Temp: {formatMaybeNumber(entry.temperature_c)} C
-                          </div>
-                        )}
-                        {module.type === 'gpio' && (
-                          <div style={{ lineHeight: 1.6 }}>
-                            GPIO mask: {formatMaybeNumber(entry.gpio_pin_mask)}<br />
-                            PWM duty: {formatMaybeNumber(entry.gpio_pwm_duty)}
-                          </div>
-                        )}
-                        {!['lidar', 'imu', 'temperature', 'gpio'].includes(module.type) && (
-                          <div style={{ opacity: 0.75 }}>—</div>
+                        ) : (
+                          <div className="table-secondary">-</div>
                         )}
                       </td>
-                      <td style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)', fontSize: 12, opacity: 0.85 }}>
-                        {entry.last_update_ms !== undefined ? `${entry.last_update_ms}` : '—'}
+                      <td className="table-secondary">
+                        {entry.last_update_ms ? new Date(entry.last_update_ms).toLocaleTimeString() : '-'}
                       </td>
                     </tr>
                   ))}

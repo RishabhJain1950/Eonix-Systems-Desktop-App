@@ -1,24 +1,18 @@
-import { useEonix } from '../context/EonixContext'
-import ModuleCard from '../components/ModuleCard'
 import { useState } from 'react'
+import ModuleCard from '../components/modules/ModuleCard'
+import { useEonix } from '../context/EonixContext'
+import { getModuleKey } from '../domain/moduleModel'
 
 export default function Modules() {
-  const { modules, connected, applyModuleConfig } = useEonix()
+  const { modules, connected, applyModuleConfig, confirmReplacement } = useEonix()
   const [isApplyingAll, setIsApplyingAll] = useState(false)
 
-  const handleApplyAll = async () => {
+  async function handleApplyAll() {
     if (!connected) return
     setIsApplyingAll(true)
     try {
-      let applied = 0
-      for (const m of modules) {
-        // applyModuleConfig returns boolean success in all cases
-        const ok = await applyModuleConfig(m)
-        if (ok) applied++
-      }
-      // UI log is handled inside applyModuleConfig
-      if (applied === 0) {
-        // nothing to apply
+      for (const module of modules) {
+        await applyModuleConfig(module)
       }
     } finally {
       setIsApplyingAll(false)
@@ -29,44 +23,62 @@ export default function Modules() {
     <div className="fade-in">
       <header className="page-header">
         <h1 className="page-title">Hardware Modules</h1>
-        <p className="page-subtitle">Configure modules connected to the CAN bus</p>
+        <p className="page-subtitle">Assign application roles from SAM registry entries</p>
       </header>
 
       {!connected ? (
         <div className="empty-state">
-          <span className="empty-state-icon">🔌</span>
+          <span className="empty-state-icon">USB</span>
           <div className="empty-state-title">No Connection</div>
           <div className="empty-state-desc">
-            Connect the Eonix Motherboard to discover modules.
+            Connect SAM over USB to discover CAN modules.
           </div>
         </div>
       ) : modules.length === 0 ? (
         <div className="empty-state">
-          <span className="empty-state-icon">🔍</span>
-          <div className="empty-state-title">Scanning CAN Bus...</div>
+          <span className="empty-state-icon">CAN</span>
+          <div className="empty-state-title">No Modules Detected</div>
           <div className="empty-state-desc">
-            Waiting for modules to announce themselves. Ensure they are powered and connected to the CAN lines.
+            SAM is connected, but it has not reported any CAN module registry entries.
           </div>
         </div>
       ) : (
         <>
-          <div style={{ padding: '0 28px 8px', display: 'flex', justifyContent: 'flex-end' }}>
-            <button
-              className="btn btn-primary"
-              disabled={!connected || isApplyingAll}
-              onClick={handleApplyAll}
-              title="Apply all selected module configurations"
-            >
-              {isApplyingAll ? 'Applying...' : 'Apply All to Hardware'}
+          <div className="page-action-row">
+            <button className="btn btn-primary" disabled={!connected || isApplyingAll} onClick={handleApplyAll}>
+              {isApplyingAll ? 'Saving...' : 'Save Role Mapping'}
             </button>
           </div>
+          <ReplacementPanel modules={modules} confirmReplacement={confirmReplacement} />
           <div className="module-grid">
-            {modules.map(mod => (
-              <ModuleCard key={mod.id} module={mod} />
+            {modules.map((module) => (
+              <ModuleCard key={getModuleKey(module)} module={module} />
             ))}
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+function ReplacementPanel({ modules, confirmReplacement }) {
+  const missingModule = modules.find((module) => module.status === 'MISSING' && module.role)
+  const candidateModule = modules.find((module) => (
+    missingModule &&
+    ['NEW', 'UNCONFIGURED'].includes(module.status) &&
+    module.descriptor === missingModule.descriptor
+  ))
+
+  if (!missingModule || !candidateModule) return null
+
+  return (
+    <div className="module-replacement-panel">
+      <div>
+        <strong>{missingModule.role}</strong> is missing. A compatible {candidateModule.descriptor} module was found.
+      </div>
+      <button className="btn btn-secondary" onClick={() => confirmReplacement(missingModule, candidateModule)}>
+        Replace with {candidateModule.uid}
+      </button>
     </div>
   )
 }

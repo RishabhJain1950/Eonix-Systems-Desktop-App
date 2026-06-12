@@ -6,12 +6,13 @@
   "author": "Eonix System",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "vite",
+    "dev": "node tools/run-vite.js",
     "build": "vite build",
     "preview": "vite preview",
-    "electron:dev": "vite --mode development",
+    "electron:dev": "node tools/run-vite.js --mode development",
     "electron:build": "vite build && electron-builder",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "smoke:electron": "node tools/run-electron-smoke.js"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

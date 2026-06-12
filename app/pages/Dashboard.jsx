@@ -7,67 +7,51 @@ export default function Dashboard() {
     <div className="fade-in">
       <header className="page-header">
         <h1 className="page-title">Dashboard</h1>
-        <p className="page-subtitle">Hardware connection status and overview</p>
+        <p className="page-subtitle">SAM connection status and engineering overview</p>
       </header>
 
-      <div style={{ padding: '0 28px' }}>
+      <div className="page-pad">
         {!connected ? (
           <div className="empty-state">
-            <span className="empty-state-icon">🔌</span>
+            <span className="empty-state-icon">USB</span>
             <div className="empty-state-title">No Device Detected</div>
             <div className="empty-state-desc">
-              Please connect your Eonix Motherboard via USB to begin configuring modules.
+              Connect SAM over USB to begin configuring modules.
             </div>
           </div>
         ) : (
-          <div style={{ display: 'grid', gap: '24px', gridTemplateColumns: '1fr 1fr' }}>
+          <div className="dashboard-grid">
             <div className="card">
-              <h3 style={{ marginBottom: '16px' }}>Motherboard</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Status</span>
-                  <span className="badge badge-green">Connected</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Port</span>
-                  <span>{deviceInfo?.port || 'Unknown'}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Firmware</span>
-                  <span style={{ fontFamily: 'var(--font-mono)' }}>{deviceInfo?.firmware || 'v1.0.0'}</span>
-                </div>
+              <h3>SAM</h3>
+              <div className="detail-stack">
+                <DetailRow label="Status" value={<span className="badge badge-green">Connected</span>} />
+                <DetailRow label="Port" value={deviceInfo?.port || 'Unknown'} />
+                <DetailRow label="Device" value={deviceInfo?.device || 'EONIX_SAM'} mono />
+                <DetailRow label="Transport" value={deviceInfo?.transport || 'usb_cdc'} mono />
+                <DetailRow label="Firmware" value={deviceInfo?.firmware || 'unknown'} mono />
               </div>
             </div>
 
             <div className="card">
-              <h3 style={{ marginBottom: '16px' }}>CAN Bus Explorer</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <div style={{ 
-                  width: '64px', height: '64px', borderRadius: '50%', 
-                  background: 'var(--bg-elevated)', display: 'flex', 
-                  alignItems: 'center', justifyContent: 'center',
-                  fontSize: '24px', color: 'var(--accent)'
-                }}>
-                  {modules.length}
-                </div>
+              <h3>Module Registry</h3>
+              <div className="metric-row">
+                <div className="metric-circle">{modules.length}</div>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: '16px' }}>Modules Detected</div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>
-                    Auto-discovered on CAN network
-                  </div>
+                  <div className="metric-title">Modules Detected</div>
+                  <div className="metric-subtitle">Received from the SAM module registry</div>
                 </div>
               </div>
             </div>
 
-            <div className="card" style={{ gridColumn: '1 / -1' }}>
-              <h3 style={{ marginBottom: '12px' }}>Device Log</h3>
-              <div className="terminal" style={{ maxHeight: '180px', overflowY: 'auto' }}>
+            <div className="card dashboard-log-card">
+              <h3>Device Log</h3>
+              <div className="terminal dashboard-terminal">
                 {logs.length === 0 ? (
-                  <div style={{ color: 'var(--text-muted)', opacity: 0.7 }}>No messages yet…</div>
+                  <div className="terminal-muted">No messages yet...</div>
                 ) : (
-                  logs.slice(-60).map((l, i) => (
-                    <div key={i} className={`terminal-line ${l.type || 'info'}`}>
-                      {l.text}
+                  logs.slice(-60).map((log, index) => (
+                    <div key={`${log.time}-${index}`} className={`terminal-line ${log.type || 'info'}`}>
+                      {log.text}
                     </div>
                   ))
                 )}
@@ -76,6 +60,15 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function DetailRow({ label, value, mono = false }) {
+  return (
+    <div className="detail-row">
+      <span>{label}</span>
+      <span className={mono ? 'mono' : ''}>{value}</span>
     </div>
   )
 }

@@ -1,202 +1,230 @@
-import tplMainboardC from './templates/mainboard/main.c?raw'
-import tplModuleC from './templates/module/main.c?raw'
-import tplCanH from './templates/common/eonix_can_protocol.h?raw'
+const ARDUINO_TARGETS = {
+  'Arduino Uno': { ssPin: 10 },
+  'Arduino Mega': { ssPin: 53 },
+}
 
-export function generateProject(modules, configs, platform = 'Mega') {
-  const files = {}
+const USER_SECTION_NAMES = [
+  'Includes',
+  'Globals',
+  'Setup',
+  'Loop',
+  'Functions',
+]
 
-  // Detect whether the user configured a VL53 module and/or an MPU module.
-  let hasVl53 = false
-  let hasMpu = false
-  let vl53Params = null
-  let mpuParams = null
+function selectedTestModule(modules, configs) {
+  const module = modules.find((item) => item.descriptor === 'TEST_LETTER_NUMBER' || item.type === 'TEST_LETTER_NUMBER')
+  if (!module) return null
 
-  modules.forEach(mod => {
-    const conf = configs[mod.id]
-    if (!conf || !conf.function) return
+  const config = configs[module.uid] || configs[module.id] || {}
+  return {
+    role: sanitizeIdentifier(config.role || module.role || 'test_module_1'),
+    letter: String(config.config?.letter ?? module.letter ?? 'A').slice(0, 1),
+    number: Number(config.config?.number ?? module.number ?? 123),
+    led: Boolean(config.config?.led ?? module.led ?? module.ledState),
+  }
+}
 
-    if (mod.type === 'lidar' && conf.function === 'vl53_distance') {
-      hasVl53 = true
-      vl53Params = conf.params || {}
-    }
-    if (mod.type === 'imu' && conf.function === 'mpu_gyro') {
-      hasMpu = true
-      mpuParams = conf.params || {}
-    }
+function sanitizeIdentifier(value) {
+  const normalized = String(value || 'test_module_1').replace(/[^A-Za-z0-9_]/g, '_')
+  return /^[A-Za-z_]/.test(normalized) ? normalized : `role_${normalized}`
+}
+
+function escapeCharLiteral(value) {
+  const char = String(value || 'A').slice(0, 1)
+  if (char === "'") return "\\'"
+  if (char === '\\') return '\\\\'
+  return char && char.charCodeAt(0) <= 127 ? char : 'A'
+}
+
+function extractUserSections(existingContent = '') {
+  const sections = {}
+
+  USER_SECTION_NAMES.forEach((sectionName) => {
+    const pattern = new RegExp(
+      `/\\* USER CODE BEGIN ${sectionName} \\*/([\\s\\S]*?)/\\* USER CODE END ${sectionName} \\*/`,
+      'm'
+    )
+    const match = existingContent.match(pattern)
+    if (match) sections[sectionName] = match[1].trim()
   })
 
-  if (platform === 'STM32') {
-    // Generate the STM32 C / HAL project files
-    files['mainboard/main.c'] = tplMainboardC
-    files['module/main.c'] = tplModuleC
-    files['common/eonix_can_protocol.h'] = tplCanH
+  return sections
+}
 
-    files['README_eonix_stm32.txt'] = [
-      'Eonix STM32 Firmware Templates',
-      '',
-      'This generates the base C/HAL files for the motherboard and modules.',
-      '1) Open STM32CubeIDE.',
-      '2) Copy `mainboard/main.c` into your Nucleo Motherboard project`s Core/Src/ folder.',
-      '3) Copy `module/main.c` into your Bluepill Module project`s Core/Src/ folder.',
-      '4) Copy `common/eonix_can_protocol.h` to both projects` Core/Inc/ folders.',
-      '',
-      'Note: These templates are base starting points and must be integrated with your own CubeMX peripheral generation (I2C, CAN, USB).'
-    ].join('\n')
+function userSection(name, defaults, preservedSections) {
+  const body = preservedSections[name] ?? defaults
+  const content = body ? `\n${body}\n` : '\n'
+  return `/* USER CODE BEGIN ${name} */${content}/* USER CODE END ${name} */`
+}
 
-    return files
+function generateArduinoSketch(modules, configs, target, previousContent) {
+  const profile = ARDUINO_TARGETS[target] || ARDUINO_TARGETS['Arduino Uno']
+  const preservedSections = extractUserSections(previousContent)
+  const module = selectedTestModule(modules, configs) || {
+    role: 'test_module_1',
+    letter: 'A',
+    number: 123,
+    led: false,
   }
 
-  // Otherwise, generate the Arduino fetcher sketch depending on the platform constraints
-  const distSampling = vl53Params?.sampling_rate_hz ?? 20
-  const distMeasMode = vl53Params?.measurement_mode ?? 0
-  const distRangeMode = vl53Params?.distance_mode ?? 0
+  const setupExample = [
+    'Serial.begin(115200);',
+    'while (!Serial) {',
+    '  ;',
+    '}',
+  ].join('\n')
 
-  const imuOdr = mpuParams?.odr_hz ?? 100
-  const imuFs = mpuParams?.gyro_full_scale ?? 250
-  const imuOutSel = mpuParams?.output_selection ?? 0
-
-  let spiComments = ''
-  let pinSs = ''
-
-  switch (platform) {
-    case 'Uno':
-    case 'Nano':
-      spiComments = [
-        '// Arduino Uno/Nano default SPI pins:',
-        '//   SCK  = D13',
-        '//   MISO = D12',
-        '//   MOSI = D11',
-        '//   SS   = D10',
-      ].join('\n')
-      pinSs = '10'
-      break
-    case 'ESP32':
-      spiComments = [
-        '// ESP32 default VSPI pins:',
-        '//   SCK  = D18',
-        '//   MISO = D19',
-        '//   MOSI = D23',
-        '//   SS   = D5',
-      ].join('\n')
-      pinSs = '5'
-      break
-    case 'Mega':
-    default:
-      spiComments = [
-        '// Arduino Mega default SPI pins:',
-        '//   SCK  = D52',
-        '//   MISO = D50',
-        '//   MOSI = D51',
-        '//   SS   = D53',
-      ].join('\n')
-      pinSs = '53'
-      break
-  }
-
-  const arduinoSketch = [
-    '/*',
-    ` * Eonix ${platform} SPI Telemetry Fetcher`,
-    ' *',
-    ' * NOTE:',
-    ' * - The Nucleo motherboard scales/manipulates module raw data.',
-    ' * - This sketch only fetches the latest scaled values via SPI and prints them.',
-    ' */',
+  const loopExample = [
+    `if (eonix.${module.role}.getNumber() > 100) {`,
+    `  eonix.${module.role}.setLed(true);`,
+    '} else {',
+    `  eonix.${module.role}.setLed(false);`,
+    '}',
     '',
+    'Serial.print("Letter: ");',
+    `Serial.println(eonix.${module.role}.getLetter());`,
+    'Serial.print("Number: ");',
+    `Serial.println(eonix.${module.role}.getNumber());`,
+    'delay(500);',
+  ].join('\n')
+
+  return [
     '#include <SPI.h>',
+    userSection('Includes', '', preservedSections),
     '',
-    'static const uint8_t CMD_TELEMETRY = 0x01;',
+    `static const uint8_t EONIX_SS_PIN = ${profile.ssPin};`,
     '',
-    '// --- SPI wiring (edit if your wiring differs) ---',
-    spiComments,
-    `static const uint8_t PIN_SS = ${pinSs};`,
-    '',
-    'struct TelemetryFrame {',
-    '  uint16_t distance_mm;',
-    '  int16_t gyro_x_centi_dps;',
-    '  int16_t gyro_y_centi_dps;',
-    '  uint16_t reserved;',
+    'struct EonixSpiPacket {',
+    "  char magic[2];",
+    '  uint8_t version;',
+    '  char letter;',
+    '  int16_t number;',
+    '  uint8_t status;',
+    '  uint8_t checksum;',
     '};',
     '',
-    '// User reference configuration (does NOT change SPI protocol/logic):',
-    `static const uint8_t EONIX_HAS_VL53 = ${hasVl53 ? 1 : 0};`,
-    `static const uint8_t EONIX_HAS_MPU  = ${hasMpu ? 1 : 0};`,
-    `static const uint32_t VL53_SAMPLING_RATE_HZ = ${Number(distSampling) || 20};`,
-    `static const uint8_t VL53_MEASUREMENT_MODE   = ${Number(distMeasMode) || 0};`,
-    `static const uint8_t VL53_DISTANCE_MODE      = ${Number(distRangeMode) || 0};`,
-    `static const uint32_t MPU_ODR_HZ             = ${Number(imuOdr) || 100};`,
-    `static const uint32_t MPU_GYRO_FULL_SCALE_DPS = ${Number(imuFs) || 250};`,
-    `static const uint8_t MPU_OUTPUT_SELECTION   = ${Number(imuOutSel) || 0};`,
-    '',
-    'static uint16_t read_u16_le(const uint8_t *b) {',
-    '  return (uint16_t)b[0] | ((uint16_t)b[1] << 8);',
+    'static uint8_t eonixChecksum(const uint8_t *bytes) {',
+    '  uint8_t checksum = 0;',
+    '  for (uint8_t i = 0; i < 7; i++) {',
+    '    checksum ^= bytes[i];',
+    '  }',
+    '  return checksum;',
     '}',
     '',
-    'static int16_t read_s16_le(const uint8_t *b) {',
-    '  return (int16_t)((uint16_t)b[0] | ((uint16_t)b[1] << 8));',
-    '}',
+    'class EonixTestLetterNumberRole {',
+    'public:',
+    `  EonixTestLetterNumberRole() : letter_('${escapeCharLiteral(module.letter)}'), number_(${Number.isFinite(module.number) ? module.number : 123}), ledState_(${module.led ? 'true' : 'false'}), pendingLedCommand_(false), pendingLedState_(false), online_(false) {}`,
+    '',
+    '  char getLetter() const { return letter_; }',
+    '  int16_t getNumber() const { return number_; }',
+    '  bool getLedState() const { return ledState_; }',
+    '  bool isOnline() const { return online_; }',
+    '',
+    '  void setLed(bool enabled) {',
+    '    pendingLedState_ = enabled;',
+    '    pendingLedCommand_ = true;',
+    '  }',
+    '',
+    '  bool consumeLedCommand(bool *enabled) {',
+    '    if (!pendingLedCommand_) return false;',
+    '    *enabled = pendingLedState_;',
+    '    pendingLedCommand_ = false;',
+    '    return true;',
+    '  }',
+    '',
+    '  void applyPacket(const EonixSpiPacket &packet) {',
+    '    letter_ = packet.letter;',
+    '    number_ = packet.number;',
+    '    online_ = true;',
+    '    ledState_ = (packet.status & 0x01) != 0;',
+    '  }',
+    '',
+    'private:',
+    '  char letter_;',
+    '  int16_t number_;',
+    '  bool ledState_;',
+    '  bool pendingLedCommand_;',
+    '  bool pendingLedState_;',
+    '  bool online_;',
+    '};',
+    '',
+    'class EonixSAM {',
+    'public:',
+    `  EonixTestLetterNumberRole ${module.role};`,
+    '',
+    '  void begin() {',
+    '    pinMode(EONIX_SS_PIN, OUTPUT);',
+    '    digitalWrite(EONIX_SS_PIN, HIGH);',
+    '    SPI.begin();',
+    '  }',
+    '',
+    '  bool update() {',
+    '    uint8_t tx[8] = {0xE0, 0x01, 0, 0, 0, 0, 0, 0};',
+    '    uint8_t rx[8] = {0};',
+    '    bool requestedLedState = false;',
+    '',
+    `    if (${module.role}.consumeLedCommand(&requestedLedState)) {`,
+    '      tx[2] = 1;',
+    '      tx[3] = requestedLedState ? 1 : 0;',
+    '    }',
+    '',
+    '    SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));',
+    '    digitalWrite(EONIX_SS_PIN, LOW);',
+    '    for (uint8_t i = 0; i < 8; i++) {',
+    '      rx[i] = SPI.transfer(tx[i]);',
+    '    }',
+    '    digitalWrite(EONIX_SS_PIN, HIGH);',
+    '    SPI.endTransaction();',
+    '',
+    "    if (rx[0] != 'E' || rx[1] != 'X' || rx[2] != 1) {",
+    '      return false;',
+    '    }',
+    '    if (eonixChecksum(rx) != rx[7]) {',
+    '      return false;',
+    '    }',
+    '',
+    '    EonixSpiPacket packet;',
+    "    packet.magic[0] = 'E';",
+    "    packet.magic[1] = 'X';",
+    '    packet.version = rx[2];',
+    '    packet.letter = (char)rx[3];',
+    '    packet.number = (int16_t)((uint16_t)rx[4] | ((uint16_t)rx[5] << 8));',
+    '    packet.status = rx[6];',
+    '    packet.checksum = rx[7];',
+    '',
+    `    ${module.role}.applyPacket(packet);`,
+    '    return true;',
+    '  }',
+    '};',
+    '',
+    'EonixSAM eonix;',
+    userSection('Globals', '', preservedSections),
     '',
     'void setup() {',
-    '  Serial.begin(115200);',
-    '  pinMode(PIN_SS, OUTPUT);',
-    '  digitalWrite(PIN_SS, HIGH);',
-    '',
-    '  SPI.begin();',
-    '  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));',
+    '  eonix.begin();',
+    indentUserSection(userSection('Setup', setupExample, preservedSections), 2),
     '}',
     '',
     'void loop() {',
-    '  uint8_t rx[8] = {0};',
-    '',
-    '  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));',
-    '  digitalWrite(PIN_SS, LOW);',
-    '  SPI.transfer(CMD_TELEMETRY);',
-    '  for (int i = 0; i < 8; i++) rx[i] = SPI.transfer(0x00);',
-    '  digitalWrite(PIN_SS, HIGH);',
-    '  SPI.endTransaction();',
-    '',
-    '  TelemetryFrame tf;',
-    '  tf.distance_mm = read_u16_le(&rx[0]);',
-    '  tf.gyro_x_centi_dps = read_s16_le(&rx[2]);',
-    '  tf.gyro_y_centi_dps = read_s16_le(&rx[4]);',
-    '  tf.reserved = read_u16_le(&rx[6]);',
-    '',
-    '  if (EONIX_HAS_VL53) {',
-    '    Serial.print("VL53 distance_mm=");',
-    '    Serial.print(tf.distance_mm);',
-    '    Serial.print(" ");',
-    '  }',
-    '',
-    '  if (EONIX_HAS_MPU) {',
-    '    Serial.print("MPU gyroX_cdeg/s=");',
-    '    Serial.print(tf.gyro_x_centi_dps);',
-    '    Serial.print(" gyroY_cdeg/s=");',
-    '    Serial.print(tf.gyro_y_centi_dps);',
-    '    Serial.print(" ");',
-    '  }',
-    '',
-    '  Serial.println();',
-    '',
-    '  delay(200);',
+    '  eonix.update();',
+    indentUserSection(userSection('Loop', loopExample, preservedSections), 2),
     '}',
     '',
-  ].join('\n')
-
-  const filename = `arduino_${platform.toLowerCase()}_spi_telemetry_fetcher.ino`
-  files[filename] = arduinoSketch
-
-  files['README_eonix_arduino.txt'] = [
-    `Eonix ${platform} SPI Telemetry Fetcher`,
+    userSection('Functions', '', preservedSections),
     '',
-    'What to do:',
-    '1) Flash the Nucleo motherboard with the matching SPI telemetry slave code.',
-    `2) Wire ${platform} to Nucleo SPI. Check the .ino file for the exact pinout.`,
-    `3) Upload \`${filename}\` to ${platform}.`,
-    '4) Open Arduino Serial Monitor @ 115200 baud.',
-    '',
-    'Notes:',
-    '- This sketch fetches the latest scaled values via SPI and prints them.',
-    '- If you changed module configuration in the app, regenerate this sketch so the reference constants match.'
   ].join('\n')
+}
 
-  return files
+function indentUserSection(section, spaces) {
+  const prefix = ' '.repeat(spaces)
+  return section.split('\n').map((line) => `${prefix}${line}`).join('\n')
+}
+
+export function generateProject(modules, configs, target = 'Arduino Uno', previousFiles = null) {
+  const filename = `eonix_${target.toLowerCase().replace(/\s+/g, '_')}_test_letter_number.ino`
+  const previousContent = previousFiles?.[filename] || ''
+
+  return {
+    [filename]: generateArduinoSketch(modules, configs, target, previousContent),
+  }
 }

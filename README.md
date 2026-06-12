@@ -2,14 +2,14 @@
 
 Desktop configuration tool for **Eonix Systems** modules.
 
-This is a **Vite + React** renderer with an **Electron** main process that talks to hardware over **USB-CDC / Serial** (STM32), discovers modules on the CAN rails, configures them, and can generate STM32 C scaffolding.
+This is a **Vite + React** renderer with an **Electron** main process that talks to hardware over **USB-CDC / Serial** (STM32), requests the SAM module registry, assigns application roles, and generates user-MCU SPI API files.
 
 ## Project layout
 
 - `app/`: renderer (React UI)
 - `electron/`: Electron main + preload (IPC bridge exposed as `window.eonix`)
 - `device/`: serial + device discovery/telemetry plumbing (`SerialHandler`)
-- `codegen/`: STM32 code generation utilities + templates
+- `codegen/`: role-based SPI API generation utilities
 - `Images/`: source brand/logo images used to refresh runtime app assets
 - `shared/`: shared utilities/types (as the project grows)
 
@@ -55,6 +55,10 @@ npm run lint
 - App logo source: `Images/Logo Only White.png`.
 - Runtime logo/icon outputs: `public/assets/eonix-app-logo.png`,
   `public/eonix-app-logo.png`, and `public/icon.ico`.
-- Code generation is self-contained; `codegen/templates/common/eonix_can_protocol.h`
-  is bundled inside this repo so the app does not depend on a sibling firmware
-  checkout.
+- The app never talks directly to modules. It talks to SAM, and SAM resolves
+  UID/descriptor/runtime CAN IDs internally.
+- Module cards show UID, descriptor/type, firmware version, hardware version,
+  runtime CAN ID, role, and status.
+- Code generation outputs `eonix_config.h`, `eonix_spi_api.h`, and
+  `eonix_spi_api.c`. User code calls role functions such as
+  `Eonix_Set_LEFT_MOTOR_Speed()` and must not depend on CAN IDs.

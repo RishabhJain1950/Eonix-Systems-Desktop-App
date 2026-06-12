@@ -1,46 +1,58 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
-// Expose a safe API to the renderer process
+// Keep preload self-contained. Sandboxed Electron preload scripts cannot safely
+// require project-local modules before the bridge is exposed.
+const IPC = {
+  WINDOW_MINIMIZE: 'window:minimize',
+  WINDOW_MAXIMIZE: 'window:maximize',
+  WINDOW_CLOSE: 'window:close',
+  SERIAL_LIST: 'serial:list-ports',
+  SERIAL_CONNECT: 'serial:connect',
+  SERIAL_DISCONNECT: 'serial:disconnect',
+  SERIAL_SEND: 'serial:send',
+  DEVICE_CONNECTED: 'device:connected',
+  DEVICE_DISCONNECTED: 'device:disconnected',
+  DEVICE_LOG: 'device:log',
+  MODULES_LIST: 'modules:list',
+  TELEMETRY_UPDATE: 'telemetry:update',
+  FLASH_UPLOAD: 'flash:upload',
+  FLASH_LOG: 'flash:log',
+  FS_SAVE: 'fs:save-file',
+  FS_READ: 'fs:read-file',
+  FS_DIALOG_SAVE: 'fs:show-save-dialog',
+  FS_DIALOG_OPEN: 'fs:show-open-dialog',
+}
+
 contextBridge.exposeInMainWorld('eonix', {
-  // Window controls
   window: {
-    minimize: () => ipcRenderer.send('window:minimize'),
-    maximize: () => ipcRenderer.send('window:maximize'),
-    close: () => ipcRenderer.send('window:close'),
+    minimize: () => ipcRenderer.send(IPC.WINDOW_MINIMIZE),
+    maximize: () => ipcRenderer.send(IPC.WINDOW_MAXIMIZE),
+    close: () => ipcRenderer.send(IPC.WINDOW_CLOSE),
   },
 
-  // Serial / Device
   serial: {
-    listPorts: () => ipcRenderer.invoke('serial:list-ports'),
-    connect: (port) => ipcRenderer.invoke('serial:connect', port),
-    disconnect: () => ipcRenderer.invoke('serial:disconnect'),
-    send: (cmd) => ipcRenderer.invoke('serial:send', cmd),
-    onDeviceConnected: (cb) => ipcRenderer.on('device:connected', (_, data) => cb(data)),
-    onDeviceDisconnected: (cb) => ipcRenderer.on('device:disconnected', (_, data) => cb(data)),
-    onModuleList: (cb) => ipcRenderer.on('modules:list', (_, data) => cb(data)),
-    onTelemetry: (cb) => ipcRenderer.on('telemetry:update', (_, data) => cb(data)),
-    onLog: (cb) => ipcRenderer.on('device:log', (_, data) => cb(data)),
+    listPorts: () => ipcRenderer.invoke(IPC.SERIAL_LIST),
+    connect: (port) => ipcRenderer.invoke(IPC.SERIAL_CONNECT, port),
+    disconnect: () => ipcRenderer.invoke(IPC.SERIAL_DISCONNECT),
+    send: (command) => ipcRenderer.invoke(IPC.SERIAL_SEND, command),
+    onDeviceConnected: (callback) => ipcRenderer.on(IPC.DEVICE_CONNECTED, (_, data) => callback(data)),
+    onDeviceDisconnected: (callback) => ipcRenderer.on(IPC.DEVICE_DISCONNECTED, (_, data) => callback(data)),
+    onModuleList: (callback) => ipcRenderer.on(IPC.MODULES_LIST, (_, data) => callback(data)),
+    onTelemetry: (callback) => ipcRenderer.on(IPC.TELEMETRY_UPDATE, (_, data) => callback(data)),
+    onLog: (callback) => ipcRenderer.on(IPC.DEVICE_LOG, (_, data) => callback(data)),
     removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
   },
 
-  // Mock mode
-  mock: {
-    enable: () => ipcRenderer.invoke('mock:enable'),
-    disable: () => ipcRenderer.invoke('mock:disable'),
-  },
-
-  // Flash
   flash: {
-    upload: (opts) => ipcRenderer.invoke('flash:upload', opts),
-    onLog: (cb) => ipcRenderer.on('flash:log', (_, data) => cb(data)),
-    removeLogListener: () => ipcRenderer.removeAllListeners('flash:log'),
+    upload: (options) => ipcRenderer.invoke(IPC.FLASH_UPLOAD, options),
+    onLog: (callback) => ipcRenderer.on(IPC.FLASH_LOG, (_, data) => callback(data)),
+    removeLogListener: () => ipcRenderer.removeAllListeners(IPC.FLASH_LOG),
   },
 
-  // Filesystem
   fs: {
-    saveFile: (opts) => ipcRenderer.invoke('fs:save-file', opts),
-    readFile: (path) => ipcRenderer.invoke('fs:read-file', path),
-    showSaveDialog: (opts) => ipcRenderer.invoke('fs:show-save-dialog', opts),
-    showOpenDialog: (opts) => ipcRenderer.invoke('fs:show-open-dialog', opts),
+    saveFile: (options) => ipcRenderer.invoke(IPC.FS_SAVE, options),
+    readFile: (filePath) => ipcRenderer.invoke(IPC.FS_READ, filePath),
+    showSaveDialog: (options) => ipcRenderer.invoke(IPC.FS_DIALOG_SAVE, options),
+    showOpenDialog: (options) => ipcRenderer.invoke(IPC.FS_DIALOG_OPEN, options),
   },
 })

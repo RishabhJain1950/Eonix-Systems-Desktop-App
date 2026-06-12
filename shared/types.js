@@ -1,42 +1,71 @@
 /**
  * @file shared/types.js
  * JSDoc type definitions shared across the Eonix Desktop App.
- * These are documentation-only — no runtime values are exported.
+ * These are documentation-only; no runtime values are exported.
  */
 
 /**
- * @typedef {Object} ModuleParameter
- * @property {string} name        - Parameter identifier (snake_case)
- * @property {'int'|'float'|'string'} type - Value type
- * @property {number|string} default - Default value
+ * @typedef {'ACTIVE'|'NEW'|'MISSING'|'FAULT'|'REPLACED'|'UNCONFIGURED'} ModuleStatus
  */
 
 /**
- * @typedef {Object} ModuleFunction
- * @property {string} name               - Function identifier (snake_case)
- * @property {ModuleParameter[]} parameters - Configurable parameters
+ * @typedef {Object} SamInfo
+ * @property {string} device
+ * @property {string} fw
+ * @property {'usb_cdc'} transport
+ * @property {string} port
  */
 
 /**
  * @typedef {Object} EonixModule
- * @property {number} id           - Unique module ID on the CAN bus
- * @property {string} type         - Module category (e.g. 'lidar', 'imu', 'gpio')
- * @property {string} name         - Human-readable module name
- * @property {string} canId        - CAN bus address string (e.g. '0x01')
- * @property {ModuleFunction[]} functions - Available firmware functions
+ * @property {string|number} id
+ * @property {string} uid                 - Permanent STM32 UID rendered as text
+ * @property {string} descriptor          - Capability profile, for example MOTOR_DRIVER_1CH
+ * @property {string} firmwareVersion
+ * @property {string} hardwareVersion
+ * @property {string|number} runtimeCanId - SAM-assigned runtime CAN ID
+ * @property {string} canId               - Display form of runtimeCanId
+ * @property {string} role                - User-facing application role
+ * @property {ModuleStatus} status
+ * @property {string[]} capabilities
+ * @property {Object.<string, number|string|boolean>} config
  */
 
 /**
- * @typedef {Object} ModuleConfig
- * @property {string} function     - Selected function name
- * @property {Object.<string, number|string>} params - Parameter values keyed by param name
+ * @typedef {EonixModule & Object} TestLetterNumberModule
+ * @property {'TEST_LETTER_NUMBER'} descriptor
+ * @property {'TEST_LETTER_NUMBER'} type
+ * @property {string} role
+ * @property {number} nodeId
+ * @property {number|string} runtime_cmd_id
+ * @property {number|string} runtime_data_id
+ * @property {boolean} online
+ * @property {string} letter
+ * @property {number} number
+ * @property {boolean} led
+ */
+
+/**
+ * @typedef {Object} TelemetryFrame
+ * @property {string} role
+ * @property {string} type
+ * @property {string} letter
+ * @property {number} number
+ * @property {boolean} led
+ * @property {boolean} online
+ */
+
+/**
+ * @typedef {Object} ModuleRoleConfig
+ * @property {string} role
+ * @property {Object.<string, number|string|boolean>} config
  */
 
 /**
  * @typedef {Object} DeviceInfo
- * @property {string} port         - Serial port path (e.g. 'COM3') or 'MOCK'
- * @property {string} [firmware]   - Firmware version string
- * @property {boolean} [mock]      - True if running in mock/developer mode
+ * @property {string} port
+ * @property {string} [firmware]
+ * @property {string} [transport]
  */
 
 module.exports = {}
